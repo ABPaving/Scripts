@@ -66,6 +66,12 @@ type
     GEMSTONE_CRAB
   );
 
+  TGemstoneSpawnInfo = record
+    Name: String;
+    CrabTile, CaveTile: TPoint;
+    CrabChunk, CaveChunk: TRSMapChunk;
+  end;
+
 var
   MonsterName: String = 'Hellhound';
   Chunks: array of TRSMapChunk := [Chunk(Box(25,157,26,156), 0)];
@@ -81,7 +87,108 @@ type
   TCombatScript = record(TBaseWalkerScript)
     State: ECombatState;
     AlchEnabled: Boolean;
+    GemstoneSpawnIndex: Int32;
   end;
+
+const
+  GEMSTONE_SPAWN_COUNT = 3;
+
+function GetGemstoneSpawnInfo(index: Int32): TGemstoneSpawnInfo;
+begin
+  if index < 0 then
+    index := 0
+  else if index >= GEMSTONE_SPAWN_COUNT then
+    index := GEMSTONE_SPAWN_COUNT - 1;
+
+  case index of
+    0:
+      begin
+        Result.Name := 'Spawn A (283,114 ↔ 253,265)';
+        Result.CrabTile.x := 283;
+        Result.CrabTile.y := 114;
+        Result.CaveTile.x := 253;
+        Result.CaveTile.y := 265;
+        Result.CrabChunk := Chunk(Box(35,14,35,14), 0);
+        Result.CaveChunk := Chunk(Box(31,33,31,33), 0);
+      end;
+
+    1:
+      begin
+        Result.Name := 'Spawn B (148,202 ↔ 417,107)';
+        Result.CrabTile.x := 148;
+        Result.CrabTile.y := 202;
+        Result.CaveTile.x := 417;
+        Result.CaveTile.y := 107;
+        Result.CrabChunk := Chunk(Box(18,25,18,25), 0);
+        Result.CaveChunk := Chunk(Box(52,13,52,13), 0);
+      end;
+
+    else // 2
+      begin
+        Result.Name := 'Spawn C (306,114 ↔ 207,295)';
+        Result.CrabTile.x := 306;
+        Result.CrabTile.y := 114;
+        Result.CaveTile.x := 207;
+        Result.CaveTile.y := 295;
+        Result.CrabChunk := Chunk(Box(38,14,38,14), 0);
+        Result.CaveChunk := Chunk(Box(25,36,25,36), 0);
+      end;
+  end;
+end;
+
+function DetectGemstoneSpawn(const pos: TPoint): Int32;
+var
+  idx: Int32;
+  info: TGemstoneSpawnInfo;
+  bestDist, dist, caveDist: Int32;
+begin
+  Result := -1;
+  bestDist := High(Int32);
+
+  for idx := 0 to GEMSTONE_SPAWN_COUNT - 1 do
+  begin
+    info := GetGemstoneSpawnInfo(idx);
+    dist := Abs(pos.x - info.CrabTile.x) + Abs(pos.y - info.CrabTile.y);
+    caveDist := Abs(pos.x - info.CaveTile.x) + Abs(pos.y - info.CaveTile.y);
+
+    if caveDist < dist then
+      dist := caveDist;
+
+    if dist < bestDist then
+    begin
+      bestDist := dist;
+      Result := idx;
+    end;
+  end;
+end;
+
+procedure TCombatScript.UpdateGemstoneSpawn(force: Boolean = False);
+var
+  detected: Int32;
+  info: TGemstoneSpawnInfo;
+begin
+  if SelectedMonster <> ERSMonster.GEMSTONE_CRAB then
+    Exit;
+
+  detected := DetectGemstoneSpawn(Map.Position());
+  if detected = -1 then
+    Exit;
+
+  if force or (Self.GemstoneSpawnIndex <> detected) then
+  begin
+    info := GetGemstoneSpawnInfo(detected);
+    Self.GemstoneSpawnIndex := detected;
+
+    SetLength(Chunks, 2);
+    Chunks[0] := info.CrabChunk;
+    Chunks[1] := info.CaveChunk;
+
+    Map.SetupChunks(Chunks, DownScale);
+    NPCs.Setup(Map.NPCs(), @Map.Walker);
+
+    WriteLn('Gemstone spawn detected: ' + info.Name);
+  end;
+end;
 
 procedure TCombatScript.SetupMonster();
 var
@@ -89,6 +196,9 @@ var
   npc: TRSNPCV2;
   tries: Int32;
 begin
+  if SelectedMonster = ERSMonster.GEMSTONE_CRAB then
+    Self.UpdateGemstoneSpawn();
+
   // Retry up to ~6s for NPC list to populate
   for tries := 1 to 12 do
   begin
@@ -153,18 +263,26 @@ begin
 
   Self.AlchEnabled := Magic.CanActivate(ERSSpell.HIGH_LEVEL_ALCHEMY);
 
-  // Keep preconfigured chunks for GEMSTONE_CRAB; only fallback if empty
-  if (SelectedMonster = ERSMonster.GEMSTONE_CRAB) and (Length(Chunks) = 0) then
+  if SelectedMonster = ERSMonster.GEMSTONE_CRAB then
   begin
-    pos := Map.Position();
-    cX := pos.x div 8;
-    cY := pos.y div 8;
-    SetLength(Chunks, 1);
-    Chunks[0] := Chunk(Box(cX, cY, cX, cY), 0);
-  end;
+    Self.GemstoneSpawnIndex := -1;
+    Self.UpdateGemstoneSpawn(True);
+  end
+  else
+  begin
+    // Keep preconfigured chunks for other monsters; only fallback if empty
+    if Length(Chunks) = 0 then
+    begin
+      pos := Map.Position();
+      cX := pos.x div 8;
+      cY := pos.y div 8;
+      SetLength(Chunks, 1);
+      Chunks[0] := Chunk(Box(cX, cY, cX, cY), 0);
+    end;
 
-  Map.SetupChunks(Chunks, DownScale);
-  NPCs.Setup(Map.NPCs(), @Map.Walker);
+    Map.SetupChunks(Chunks, DownScale);
+    NPCs.Setup(Map.NPCs(), @Map.Walker);
+  end;
 
   Self.SetupMonster();
 end;
@@ -205,6 +323,9 @@ begin
     Self.State := CombatHandler.GetState();
     Self.TotalActions := CombatHandler.TotalKills;
     Self.SetAction(ToStr(Self.State));
+
+    if SelectedMonster = ERSMonster.GEMSTONE_CRAB then
+      Self.UpdateGemstoneSpawn();
 
     if Chat.FindMessage('superior foe', [CHAT_COLOR_LIGHT_RED]) then
     begin
@@ -781,25 +902,12 @@ begin
         Self.MapSelector.Clear();
         Self.MapSelector.SetVisible(True);
         Self.MapSelector.AddItemArray([
-          'Tal Teklan – Crab A (283,114)',
-          'Tal Teklan – Cave A (253,265)',
-          'Tal Teklan – Crab B (148,202)',
-          'Tal Teklan – Cave B (417,107)',
-          'Tal Teklan – Crab C (306,114)',
-          'Tal Teklan – Cave C (207,295)'
+          'Tal Teklan – Spawn A (auto)',
+          'Tal Teklan – Spawn B (auto)',
+          'Tal Teklan – Spawn C (auto)'
         ]);
-        // Tiles → chunk grid (/8):
-        // A: 283,114 → 35,14 | 253,265 → 31,33
-        // B: 148,202 → 18,25 | 417,107 → 52,13
-        // C: 306,114 → 38,14 | 207,295 → 25,36
-        Chunks := [
-          Chunk(Box(35,14,35,14), 0),  // A crab
-          Chunk(Box(31,33,31,33), 0), // A cave
-          Chunk(Box(18,25,18,25), 0), // B crab
-          Chunk(Box(52,13,52,13), 0), // B cave
-          Chunk(Box(38,14,38,14), 0), // C crab
-          Chunk(Box(25,36,25,36), 0)  // C cave
-        ];
+        Self.MapSelector.SetEnabled(False);
+        SetLength(Chunks, 0);
         MonsterName := 'Gemstone crab';
         SelectedMonster := ERSMonster.GEMSTONE_CRAB;
       end;
@@ -807,7 +915,10 @@ begin
   end;
 
   Self.MapSelector.SetItemIndex(0);
-  Self.MapSelector.SetEnabled(Self.MapSelector.ComboBox.getItems().getCount() > 1);
+  if SelectedMonster = ERSMonster.GEMSTONE_CRAB then
+    Self.MapSelector.SetEnabled(False)
+  else
+    Self.MapSelector.SetEnabled(Self.MapSelector.ComboBox.getItems().getCount() > 1);
 
   Self.Config.Put('monster', ToStr(m).Replace('_', ' ').SentenceCase());
 
