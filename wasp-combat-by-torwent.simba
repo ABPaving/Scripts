@@ -88,7 +88,6 @@ type
     State: ECombatState;
     AlchEnabled: Boolean;
     GemstoneSpawnIndex: Int32;
-    procedure UpdateGemstoneSpawn(force: Boolean = False);
   end;
 
 const
