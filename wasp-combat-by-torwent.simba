@@ -143,7 +143,7 @@ var
   bestDist, dist, caveDist: Int32;
 begin
   Result := -1;
-  bestDist := MaxInt;
+  bestDist := High(Int32);
 
   for idx := 0 to GEMSTONE_SPAWN_COUNT - 1 do
   begin
