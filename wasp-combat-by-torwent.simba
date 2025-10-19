@@ -136,6 +136,28 @@ begin
   end;
 end;
 
+procedure InitGemstoneChunks();
+var
+  idx, outIdx: Int32;
+  info: TGemstoneSpawnInfo;
+begin
+  if Length(Chunks) <> GEMSTONE_SPAWN_COUNT * 2 then
+    SetLength(Chunks, GEMSTONE_SPAWN_COUNT * 2);
+
+  outIdx := 0;
+
+  for idx := 0 to GEMSTONE_SPAWN_COUNT - 1 do
+  begin
+    info := GetGemstoneSpawnInfo(idx);
+
+    Chunks[outIdx] := info.CrabChunk;
+    Inc(outIdx);
+
+    Chunks[outIdx] := info.CaveChunk;
+    Inc(outIdx);
+  end;
+end;
+
 function DetectGemstoneSpawn(const pos: TPoint): Int32;
 var
   idx: Int32;
@@ -188,11 +210,6 @@ begin
     info := GetGemstoneSpawnInfo(detected);
     Self.GemstoneSpawnIndex := detected;
 
-    SetLength(Chunks, 2);
-    Chunks[0] := info.CrabChunk;
-    Chunks[1] := info.CaveChunk;
-
-    Map.SetupChunks(Chunks, DownScale);
     NPCs.Setup(Map.NPCs(), @Map.Walker);
 
     WriteLn('Gemstone spawn detected: ' + info.Name);
@@ -274,6 +291,10 @@ begin
 
   if SelectedMonster = ERSMonster.GEMSTONE_CRAB then
   begin
+    InitGemstoneChunks();
+    Map.SetupChunks(Chunks, DownScale);
+    NPCs.Setup(Map.NPCs(), @Map.Walker);
+
     Self.GemstoneSpawnIndex := -1;
     Self.UpdateGemstoneSpawn(True);
   end
